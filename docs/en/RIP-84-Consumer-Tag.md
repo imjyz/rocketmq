@@ -109,7 +109,6 @@
 
     **case 1**: consumer-A1 pulls messages
    
-      - MessageStore first retrieves messages from the cache.
       - MessageStore first checks the cache. On miss or insufficiency, it reads messages sequentially from the commitLog on disk, skipping those that do not match the `subscription filter rules`.
       - It first tries to match tag-A (since the consumer is consumer-A). If matched, the message is added to consumer-A1's pull result and the next message is read; otherwise, it proceeds.
       - Iterate through all tags; if a message matches a tag, cache it under that tag. For consumers with downgrade enabled, the message is guaranteed to match exactly one tag.
