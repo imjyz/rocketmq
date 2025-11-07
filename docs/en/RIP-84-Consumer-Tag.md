@@ -102,7 +102,7 @@
 
     MessageStore sequentially reads from the commitLog. Messages are first filtered by `subscription filter rules`, and then assigned a consumer-tag.
    
-    <img width="1359" height="528" alt="image" src="https://github.com/user-attachments/assets/dbfc1ad4-b7a3-4b7d-baef-1a5aecac0996" />
+    <img width="1359" height="528" alt="image" src="https://github.com/imjyz/rocketmq/blob/develop/docs/en/images/RIP-84_consumer_tag_store.png" />
 
 
     **Here are several examples:**
