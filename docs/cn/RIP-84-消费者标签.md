@@ -76,24 +76,25 @@
 
 #### PopMessage
 
-在 `MessageStore` 中新增消息缓存机制。（不是最终实现）
+##### 增加缓存
 
-缓存可选择存储于内存或 RocksDB，
-**无需保证持久性**——即使 Broker 宕机导致缓存丢失，
-也可在重启后基于 `commit offset` 重新消费，确保数据不丢失。
+在 `MessageStore` 中新增消息缓存机制，缓存可选择存储于内存或 RocksDB，
+**无需保证持久性**——即使 Broker 宕机导致缓存丢失，也可在重启后基于 `commit offset` 重新消费，确保数据不丢失。
 
 缓存采用分层的 key-value 结构，其中：
 
 - **Key**：具有层级语义的字符串，便于按维度高效组织与检索，格式为 `consumer-group/tag/topic/queue`。
-- **Value**：一个带容量限制的消息队列（`Queue<Message>`），其最大大小（`maxSize`）可配置，用于防止缓存无限增长。
+- **Value**：`Queue<Message>`
 
   <div style="text-align: center">
       <img height="450" src="image/rip-84/message-cache.png" alt="message-cache">
   </div>
 
-<br/>
+##### 添加配置项
 
-**消息拉取逻辑：**
+`MaxPendingMessages`：读取偏移量（read-offset）与提交偏移量（commit-offset）之间的最大差值，用于防止缓存无限增长，当差值大于 `MaxPendingMessages` 时将不再从 `commitLog` 读取新消息
+
+##### 消息拉取逻辑
 
   <div style="text-align: center">
      <img height="800" alt="pop-message" src="image/rip-84/pop-message.png" />
@@ -101,7 +102,7 @@
 
 1. **优先从缓存读取消息**：根据当前消费者的 `consumer-tag` 从缓存中拉取消息。若已读取的消息数量达到 `maxMsgNums`，则立即返回响应。
 
-2. **防止过度堆积**：计算当前读取偏移量（read-offset）与提交偏移量（commit-offset）之间的差值。若该差值超过可配置的阈值 `MaxPendingMessages`，则不再从 `commitLog` 读取新消息。此机制在客户端表现为“消息堆积”。
+2. **防止缓存无限增长**：计算当前读取偏移量（read-offset）与提交偏移量（commit-offset）之间的差值。若该差值超过可配置的阈值 `MaxPendingMessages`，则不再从 `commitLog` 读取新消息。此机制在客户端表现为“消息堆积”。
 
 3. **过滤订阅规则**：若需从 `commitLog` 读取消息，先使用订阅规则过滤。不匹配的消息将被跳过，继续读取下一条。
 
@@ -113,11 +114,9 @@
 
    **补充说明**：
    - **常规场景**：有可接收降级消息的 `default-consumer`，能够消费所有标记为 `default` 的消息。
-   - **异常场景**：若 `default-consumer` 宕机或未部署，则无法匹配任何 `tag` 的消息仍会被标记为 `default` 并持续写入缓存。当缓存达到容量上限后，将阻塞后续消费，形成背压（backpressure）。
+   - **异常场景**：若 `default-consumer` 宕机或未部署，则无法匹配任何 `tag` 的消息仍会被标记为 `default` 并持续写入缓存。当read-offset与commit-offset差值达到MaxPendingMessages时，将阻塞后续消费，形成背压（backpressure）。
 
-<br/>
-
-**以下是几个示例：**
+##### 示例场景
 
 1. **常规场景**，仅由 default-consumer 消费，此场景下不会使用缓存。
 
@@ -143,19 +142,18 @@
         <img height="500" src="image/rip-84/gray-consumer-offline.png" alt="gray-consumer-offline">
     </div>
 
-<br/>
 
-**QA**
+##### QA
 
   **Q:** 容错与可靠性：若某个消费者发生故障，如何确保消息不丢失并尽可能减少重复消费
     
-  **A:** 消费者宕机，其关联的消息将由默认消费者继续消费。如果不存在默认消费者，会在缓存达到上限后阻塞消费。在此期间不会丢消息，也不会有重复消费
+  **A:** 消费者宕机，其关联的消息将由默认消费者继续消费。如果不存在默认消费者，会在`read-offset`与`commit-offset`差值达到`MaxPendingMessages`后阻塞消费。在此期间不会丢消息，也不会有重复消费
     
   **Q:** 资源风险：如果某个消费者卡住或严重滞后，其关联的缓存是否会无限增长
     
-  **A:** 缓存有大小限制，不会无限增长，某个消费者消费滞后会导致缓存达到上限，阻塞消费。在用户侧的反馈是 消息堆积。
+  **A:** 不会，缓存中最多有`MaxPendingMessages`个消息。
 
-<br/><br/>
+<br/>
 
 #### 维护消费者元数据
 
@@ -173,9 +171,8 @@ Broker 端将持有如下数据：
 | tag-B | env=qa | 1     | false              | consumer-B1 |
 | /     | /      | /     | true               | consumer-C1 |
 
-<br/>
 
-**consumer事件**
+##### consumer事件
 
 1. consumer 注册
    * default-consumer 存在，只更新元数据
@@ -264,6 +261,7 @@ Broker 端将持有如下数据：
 
 # 被否决的替代方案
 
+## 灰度方案
 **有两种支持灰度方案**：
 1. **新建 Consumer group 灰度**，存在重复消费和消息丢失两种边界问题
   * 应用在灰度环境发布时，若不修改基础环境的订阅条件，大量重复消费的场景是不可接受的。但何时修改基础环境的订阅条件又是一个挑战。
@@ -275,7 +273,7 @@ Broker 端将持有如下数据：
 
 <br/>
 
-**使用 consumer tag 方案的优势**：
+## consumer tag 的优势
 
 1. **灰度测试不依赖生产者**
 

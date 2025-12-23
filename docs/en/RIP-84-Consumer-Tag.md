@@ -80,6 +80,8 @@
 
 #### PopMessage
 
+##### Add cache
+
 Add a message caching mechanism to `MessageStore`. (This is not the final implementation.)
 
 The cache can be stored either in memory or in RocksDB, 
@@ -89,15 +91,17 @@ data integrity is still guaranteed because messages can be re-consumed from the 
 The cache uses a hierarchical key-value structure, where:
 
 - **Key:** A string with hierarchical semantics, facilitating efficient organization and retrieval by dimensions. The format is `consumer-group/tag/topic/queue`.
-- **Value:** A size-bounded message queue (`Queue<Message>`), with a configurable maximum size (`maxSize`) to prevent unbounded cache growth.
+- **Value:** `Queue<Message>`
 
   <div style="text-align: center">
     <img height="450" src="../cn/image/rip-84/message-cache.png" alt="message-cache">
   </div>
 
-<br/>
+##### Add a configuration option
 
-**Message fetching logic**
+`MaxPendingMessages`: The maximum allowed difference between the read offset and the commit offset. This setting prevents unbounded cache growth by stopping further reads from the commitLog once the difference exceeds `MaxPendingMessages`.
+
+##### Message fetching logic
 
   <div style="text-align: center">
      <img height="800" alt="pop-message" src="../cn/image/rip-84/pop-message.png" />
@@ -105,7 +109,7 @@ The cache uses a hierarchical key-value structure, where:
 
 1. **Prefer reading messages from cache:** Pull messages from the cache based on the current consumer’s consumer-tag. If the number of messages already read reaches maxMsgNums, immediately return the response.
 
-2. **Prevent excessive backlog:** Calculate the difference between the current `read-offset` and the `commit-offset`. If this difference exceeds the configurable threshold MaxPendingMessages, stop reading new messages from the commitLog. This mechanism manifests as "message backlog" on the client side.
+2. **Prevent unbounded cache growth:** Calculate the difference between the current `read-offset` and the `commit-offset`. If this difference exceeds the configurable threshold MaxPendingMessages, stop reading new messages from the commitLog. This mechanism manifests as "message backlog" on the client side.
 
 3. **Apply subscription filters:** When reading messages from the commitLog, first apply subscription filters. Messages that do not match are skipped, and the next message is read.
 
@@ -117,11 +121,9 @@ The cache uses a hierarchical key-value structure, where:
    
   **Additional notes:**
     - **Normal scenario:** A default-consumer exists that can accept fallback messages and consume all messages marked as default.
-    - **Abnormal scenario:** If the default-consumer is down or not deployed, messages that match no tag will still be labeled as default and continuously written to the cache. Once the cache reaches its capacity limit, subsequent consumption will be blocked, creating backpressure.
+    - **Abnormal scenario:** If the default-consumer is down or not deployed, messages that match no tag will still be labeled as default and continuously written to the cache. Once the difference between the read offset and the commit offset reaches the MaxPendingMessages, subsequent consumption will be blocked, creating backpressure.
 
-<br/>
-
-**Here are several examples：**
+##### Example scenarios
 
 1. **Normal scenario**, Consumption is handled solely by the default-consumer, and in this case, the cache will not be utilized.
 
@@ -147,19 +149,18 @@ The cache uses a hierarchical key-value structure, where:
         <img height="500" src="../cn/image/rip-84/gray-consumer-offline.png" alt="gray-consumer-offline">
     </div>
 
-<br/>
 
-**QA**
+##### QA
 
   **Q:** In the event of consumer failures, how can we ensure no message loss and minimize duplicates?
     
-  **A:** If a consumer crashes, its associated messages will continue to be consumed by the default consumer. In the absence of a default consumer, consumption will be blocked once the cache reaches its upper limit. During this period, no messages will be lost, nor will there be any duplicate consumption.
+  **A:** If a consumer crashes, its associated messages will continue to be consumed by the default consumer. In the absence of a default consumer, consumption will be blocked once the difference between the read offset and the commit offset reaches the MaxPendingMessages. During this period, no messages will be lost, nor will there be any duplicate consumption.
     
   **Q:** If a single consumer gets stuck or falls behind, could its associated cache grow indefinitely?
     
-  **A:** The cache has size limitations and will not grow indefinitely. A lagging consumer will cause the cache to reach its maximum capacity, blocking further consumption. From the user's perspective, this manifests as message backlog.
+  **A:** No, The cache holds at most `MaxPendingMessages` messages.
 
-<br/><br/>
+<br/>
 
 #### Maintain consumer metadata
 
@@ -172,15 +173,14 @@ Examples include:
 The broker side will have this data：
 
 | tag   | filter | ratio | allow degraded msg | consumer    |
-   |-------|--------|-------|--------------------|-------------|
+|-------|--------|-------|--------------------|-------------|
 | tag-A | v=2.0  | 0.5   | false              | consumer-A1 |
 | tag-A | v=2.0  | 0.5   | false              | consumer-A1 |
 | tag-B | env=qa | 1     | false              | consumer-B1 |
 | /     | /      | /     | true               | consumer-C1 |
 
-<br/>
 
-**Consumer Events**
+##### Consumer Events
 
 1. Consumer Registration
   - If a default-consumer already exists: only update metadata.
@@ -274,6 +274,8 @@ The broker side will have this data：
 
 # Rejected Alternatives
 
+## Canary deployment strategy
+
 **There are two approaches to support canary deployment:**
 
 1. **Create new consumer group**, This approach faces two boundary issues—duplicate consumption and potential message loss.
@@ -284,9 +286,8 @@ The broker side will have this data：
 2. Queue-isolation-based, Refer to: [#8468](https://github.com/apache/rocketmq/issues/8468)
    - This solution addresses the boundary issues more effectively but still lacks sufficient flexibility.
 
-<br/>
 
-**Advantages of the Consumer Tag**
+## Advantages of the Consumer Tag
 
 1. **Canary testing is independent of producers** 
    
