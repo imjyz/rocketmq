@@ -88,14 +88,15 @@
 - **Value**：一个带容量限制的消息队列（`Queue<Message>`），其最大大小（`maxSize`）可配置，用于防止缓存无限增长。
 
   <div style="text-align: center">
-      <img src="image/rip-84/message-cache.png" alt="message-cache">
+      <img height="450" src="image/rip-84/message-cache.png" alt="message-cache">
   </div>
 
+<br/>
 
 **消息拉取逻辑：**
 
   <div style="text-align: center">
-     <img alt="pop-message" src="image/rip-84/pop-message.png" />
+     <img height="800" alt="pop-message" src="image/rip-84/pop-message.png" />
   </div>
 
 1. **优先从缓存读取消息**：根据当前消费者的 `consumer-tag` 从缓存中拉取消息。若已读取的消息数量达到 `maxMsgNums`，则立即返回响应。
@@ -114,32 +115,35 @@
    - **常规场景**：有可接收降级消息的 `default-consumer`，能够消费所有标记为 `default` 的消息。
    - **异常场景**：若 `default-consumer` 宕机或未部署，则无法匹配任何 `tag` 的消息仍会被标记为 `default` 并持续写入缓存。当缓存达到容量上限后，将阻塞后续消费，形成背压（backpressure）。
 
+<br/>
 
 **以下是几个示例：**
 
 1. **常规场景**，仅由 default-consumer 消费，此场景下不会使用缓存。
 
     <div style="text-align: center">
-        <img height="245" src="image/rip-84/only-default-consumer.png" alt="only-default-consumer">
+        <img height="200" src="image/rip-84/only-default-consumer.png" alt="only-default-consumer">
     </div>
 
 2. **灰度发布开始**，default-consumer 和 tag-consumer 共存
 
     <div style="text-align: center">
-        <img height="647" src="image/rip-84/gray-consume.png" alt="gray-consume">
+        <img height="500" src="image/rip-84/gray-consume.png" alt="gray-consume">
     </div>
 
 3. **灰度consumer消费严重滞后**，导致其他 tag 消息的消费被阻塞。
 
     <div style="text-align: center">
-        <img height="608" src="image/rip-84/gray-consumer-block.png" alt="gray-consumer-block">    
+        <img height="500" src="image/rip-84/gray-consumer-block.png" alt="gray-consumer-block">    
     </div>
 
 4. **灰度 Consumer 宕机或下线**，缓存中的消息由 default-consumer 接管并消费
 
     <div style="text-align: center">
-        <img height="647" src="image/rip-84/gray-consumer-offline.png" alt="gray-consumer-offline">
+        <img height="500" src="image/rip-84/gray-consumer-offline.png" alt="gray-consumer-offline">
     </div>
+
+<br/>
 
 **QA**
 
@@ -151,7 +155,7 @@
     
   **A:** 缓存有大小限制，不会无限增长，某个消费者消费滞后会导致缓存达到上限，阻塞消费。在用户侧的反馈是 消息堆积。
 
-
+<br/><br/>
 
 #### 维护消费者元数据
 
@@ -169,6 +173,7 @@ Broker 端将持有如下数据：
 | tag-B | env=qa | 1     | false              | consumer-B1 |
 | /     | /      | /     | true               | consumer-C1 |
 
+<br/>
 
 **consumer事件**
 
@@ -267,6 +272,8 @@ Broker 端将持有如下数据：
 
 2. **隔离 queue 灰度**，参考：[#8468](https://github.com/apache/rocketmq/issues/8468)
   * 该方案较好地解决了边界问题，但仍不够灵活。
+
+<br/>
 
 **使用 consumer tag 方案的优势**：
 

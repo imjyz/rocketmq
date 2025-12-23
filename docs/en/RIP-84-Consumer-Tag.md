@@ -92,14 +92,15 @@ The cache uses a hierarchical key-value structure, where:
 - **Value:** A size-bounded message queue (`Queue<Message>`), with a configurable maximum size (`maxSize`) to prevent unbounded cache growth.
 
   <div style="text-align: center">
-    <img src="../cn/image/rip-84/message-cache.png" alt="message-cache">
+    <img height="450" src="../cn/image/rip-84/message-cache.png" alt="message-cache">
   </div>
 
+<br/>
 
 **Message fetching logic**
 
   <div style="text-align: center">
-     <img alt="pop-message" src="../cn/image/rip-84/pop-message.png" />
+     <img height="800" alt="pop-message" src="../cn/image/rip-84/pop-message.png" />
   </div>
 
 1. **Prefer reading messages from cache:** Pull messages from the cache based on the current consumer’s consumer-tag. If the number of messages already read reaches maxMsgNums, immediately return the response.
@@ -118,32 +119,35 @@ The cache uses a hierarchical key-value structure, where:
     - **Normal scenario:** A default-consumer exists that can accept fallback messages and consume all messages marked as default.
     - **Abnormal scenario:** If the default-consumer is down or not deployed, messages that match no tag will still be labeled as default and continuously written to the cache. Once the cache reaches its capacity limit, subsequent consumption will be blocked, creating backpressure.
 
+<br/>
 
 **Here are several examples：**
 
 1. **Normal scenario**, Consumption is handled solely by the default-consumer, and in this case, the cache will not be utilized.
 
     <div style="text-align: center">
-        <img height="245" src="../cn/image/rip-84/only-default-consumer.png" alt="only-default-consumer">
+        <img height="200" src="../cn/image/rip-84/only-default-consumer.png" alt="only-default-consumer">
     </div>
 
 2. **Start of gray release**, Both the default-consumer and tag-consumer coexist.
 
     <div style="text-align: center">
-        <img height="647" src="../cn/image/rip-84/gray-consume.png" alt="gray-consume">
+        <img height="500" src="../cn/image/rip-84/gray-consume.png" alt="gray-consume">
     </div>
 
 3. **Severe lag in gray consumer consumption**, leading to blockages in the consumption of messages tagged differently.
 
     <div style="text-align: center">
-        <img height="608" src="../cn/image/rip-84/gray-consumer-block.png" alt="gray-consumer-block">    
+        <img height="500" src="../cn/image/rip-84/gray-consumer-block.png" alt="gray-consumer-block">    
     </div>
 
 4. **Gray consumer crashes or offline**: Messages within the cache are taken over and consumed by the default-consumer.
 
     <div style="text-align: center">
-        <img height="647" src="../cn/image/rip-84/gray-consumer-offline.png" alt="gray-consumer-offline">
+        <img height="500" src="../cn/image/rip-84/gray-consumer-offline.png" alt="gray-consumer-offline">
     </div>
+
+<br/>
 
 **QA**
 
@@ -155,6 +159,7 @@ The cache uses a hierarchical key-value structure, where:
     
   **A:** The cache has size limitations and will not grow indefinitely. A lagging consumer will cause the cache to reach its maximum capacity, blocking further consumption. From the user's perspective, this manifests as message backlog.
 
+<br/><br/>
 
 #### Maintain consumer metadata
 
@@ -173,6 +178,7 @@ The broker side will have this data：
 | tag-B | env=qa | 1     | false              | consumer-B1 |
 | /     | /      | /     | true               | consumer-C1 |
 
+<br/>
 
 **Consumer Events**
 
@@ -278,6 +284,7 @@ The broker side will have this data：
 2. Queue-isolation-based, Refer to: [#8468](https://github.com/apache/rocketmq/issues/8468)
    - This solution addresses the boundary issues more effectively but still lacks sufficient flexibility.
 
+<br/>
 
 **Advantages of the Consumer Tag**
 
